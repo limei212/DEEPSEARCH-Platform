@@ -28,7 +28,7 @@ Copy-Item .env.example .env.local
 pnpm dev:compat
 ```
 
-打开 `http://127.0.0.1:5173/`。实际研搜和助手测试需要在 `.env` 中填写可用模型密钥，外部资源按需配置。Windows 兼容启动使用 npm 官方 `esbuild-wasm`，无需额外运行目录。
+实际研搜和助手测试需要在 `.env` 中填写可用模型密钥，外部资源按需配置。Windows 兼容启动使用 npm 官方 `esbuild-wasm`，无需额外运行目录。
 
 没有 uv 时可使用 pip，详见 [项目运行说明](项目运行说明.txt)；助手配置详见 [助手管理说明](docs/助手管理使用说明.txt)。
 
