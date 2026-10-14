@@ -9,7 +9,9 @@ import {
   ThunderboltOutlined,
 } from "@ant-design/icons";
 import { Button, Drawer, Input, Modal, Select } from "antd";
-import { useCallback, useEffect, useReducer, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { HistoryMore } from './components/HistoryMore';
+import { getSavedTask, listTaskHistory } from './lib/api';
 import { ResearchWorkspace } from "./components/ResearchWorkspace";
 import { createTaskHistory, taskHistoryReducer } from "./lib/taskHistory";
 import { createThreadId } from "./lib/thread";
@@ -45,6 +47,48 @@ export default function App() {
   const [dirty, setDirty] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState('');
+  const [nextCursor, setNextCursor] = useState<number|null>(null);
+  const historyInitialized=useRef(false);
+  const historyLoadingRef=useRef(false);
+  const refreshHistory=useCallback(async()=>{
+    if (historyLoadingRef.current) return;
+    historyLoadingRef.current=true;
+    setHistoryLoading(true);
+    try {
+      const page=await listTaskHistory();
+      let selectedTaskId: string|undefined;
+      if (!historyInitialized.current) {
+        const selected=localStorage.getItem('deepsearch-active-task');
+        if (selected) {
+          selectedTaskId=selected;
+          if (!page.tasks.some(task=>task.id===selected)) {
+            try {page.tasks.unshift(await getSavedTask(selected));} catch {selectedTaskId=undefined;}
+          }
+        }
+        setNextCursor(page.next_cursor);
+        historyInitialized.current=true;
+      }
+      dispatch({type:'restore',tasks:page.tasks,selectedTaskId});
+      setHistoryError('');
+    } catch(error) {
+      setHistoryError(error instanceof Error?error.message:'无法读取任务历史');
+    } finally {historyLoadingRef.current=false;setHistoryLoading(false);}
+  },[]);
+  const loadMoreHistory=useCallback(async()=>{
+    if (nextCursor===null || historyLoadingRef.current) return;
+    historyLoadingRef.current=true;
+    setHistoryLoading(true);
+    try {
+      const page=await listTaskHistory(nextCursor);
+      dispatch({type:'restore',tasks:page.tasks});
+      setNextCursor(page.next_cursor);
+      setHistoryError('');
+    } catch(error) {setHistoryError(error instanceof Error?error.message:'无法读取任务历史');}
+    finally {historyLoadingRef.current=false;setHistoryLoading(false);}
+  },[nextCursor]);
+  useEffect(()=>{void refreshHistory();},[refreshHistory]);
   const [template, setTemplate] = useState("blank");
   const [newName, setNewName] = useState("");
   const [draft, setDraft] = useState<AgentConfig>(newAgent);
@@ -91,9 +135,10 @@ export default function App() {
     else go();
   }
   function handleNewTask() {
-    navigate({ kind: "chat" }, () =>
-      dispatch({ type: "new", workspaceId: createThreadId() }),
-    );
+    navigate({ kind: "chat" }, () => {
+      localStorage.removeItem('deepsearch-active-task');
+      dispatch({ type: "new", workspaceId: createThreadId() });
+    });
   }
   function openCreate(copyId?: string) {
     setTemplate(copyId || "blank");
@@ -177,7 +222,7 @@ export default function App() {
       <nav className="sidebar-section sidebar-tasks" aria-label="任务列表">
         <span className="sidebar-label">任务列表</span>
         {history.tasks.length === 0 ? (
-          <p className="task-history-empty">暂无任务</p>
+          <p className="task-history-empty">{historyLoading?'正在读取历史任务':'暂无任务'}</p>
         ) : (
           <ul className="task-history-list">
             {history.tasks.map((task) => (
@@ -192,9 +237,10 @@ export default function App() {
                   }
                   title={task.content}
                   onClick={() =>
-                    navigate({ kind: "chat" }, () =>
-                      dispatch({ type: "select", taskId: task.id }),
-                    )
+                    navigate({ kind: "chat" }, () => {
+                      localStorage.setItem('deepsearch-active-task',task.id);
+                      dispatch({ type: "select", taskId: task.id });
+                    })
                   }
                 >
                   <FileTextOutlined aria-hidden />
@@ -204,6 +250,8 @@ export default function App() {
             ))}
           </ul>
         )}
+        {historyError && <div className="sidebar-load-error">读取任务历史失败：{historyError}<Button type="link" size="small" onClick={()=>void refreshHistory()}>重试</Button></div>}
+        {nextCursor!==null && <HistoryMore loadMore={()=>void loadMoreHistory()} loading={historyLoading} error={historyError} />}
       </nav>
     </>
   );
@@ -240,9 +288,11 @@ export default function App() {
               : null
           }
           onNewTask={handleNewTask}
-          onTaskSubmitted={(id, workspaceId, content) =>
-            dispatch({ type: "submitted", id, workspaceId, content })
-          }
+          onHistoryRestored={refreshHistory}
+          onTaskSubmitted={(id, workspaceId, content) => {
+            localStorage.setItem('deepsearch-active-task',id);
+            dispatch({ type: "submitted", id, workspaceId, content });
+          }}
         />
       ))}
       {view.kind === "agent" && selected && (

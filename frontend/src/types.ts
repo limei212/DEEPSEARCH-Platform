@@ -15,6 +15,8 @@ export interface MonitorMessage {
   message: string;
   data: Record<string, unknown>;
   timestamp: string;
+  task_id?: string;
+  sequence?: number;
 }
 
 export interface PongMessage {
@@ -22,11 +24,26 @@ export interface PongMessage {
   message: string;
 }
 
-export type SocketMessage = MonitorMessage | PongMessage;
+export interface SavedTask {
+  id: string;
+  workspaceId: string;
+  content: string;
+  title: string;
+  timestamp: string;
+  status: string;
+  result: string;
+  events: MonitorMessage[];
+  files: OutputFile[];
+  isRunning: boolean;
+  sessionPath: string;
+}
+
+export type SocketMessage = MonitorMessage | PongMessage | {type:"history";tasks:SavedTask[]};
 
 export interface TaskResponse {
   status: "started" | string;
   thread_id: string;
+  task_id?: string;
 }
 
 export interface CancelTaskResponse {

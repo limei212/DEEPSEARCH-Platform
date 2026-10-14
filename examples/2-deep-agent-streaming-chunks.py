@@ -7,47 +7,19 @@ DeepAgents 快速入门：搜索工具 + 流式解析
 """
 
 import os
-from typing import Literal
+from pathlib import Path
+import sys
 
 from deepagents import create_deep_agent
 from dotenv import find_dotenv, load_dotenv
 from langchain.chat_models import init_chat_model
-from langchain.tools import tool
-from tavily import TavilyClient
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from app.tools.exa_tool import internet_search
 
-# 读取项目根目录中的 .env，示例依赖 LLM_QWEN_MAX 和 TAVILY_API_KEY
+# 读取项目根目录中的 .env，示例依赖 LLM_QWEN_MAX 和 EXA_API_KEY
 load_dotenv(find_dotenv())
 
 llm_name = os.getenv("LLM_QWEN_MAX")
-tavily_key = os.getenv("TAVILY_API_KEY")
-
-
-# Tavily 客户端负责真正的联网搜索，工具函数中会复用这个客户端
-tavily_client = TavilyClient(api_key=tavily_key)
-
-
-@tool
-def internet_search(
-    query: str,
-    max_results: int = 5,
-    topic: Literal["news", "finance", "general"] = "general",
-    include_raw_content: bool = False,
-):
-    """
-    互联网搜索工具
-
-    DeepAgent 会根据工具描述和参数签名，自动决定是否调用该工具
-    include_raw_content=False 时返回摘要内容；True 时会尝试返回更完整的网页原文
-    """
-    print(
-        f"开始调用网络搜索工具，核心参数为：{query},{max_results},{topic},{include_raw_content}"
-    )
-    return tavily_client.search(
-        query=query,
-        max_results=max_results,
-        topic=topic,
-        include_raw_content=include_raw_content,
-    )
 
 
 # 使用 OpenAI 兼容接口初始化千问模型

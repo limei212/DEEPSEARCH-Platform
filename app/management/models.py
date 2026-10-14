@@ -69,7 +69,7 @@ class ResourceConfig(BaseModel):
 
 
 BUILTIN_TOOLS = {
-    'internet_search': '网络搜索', 'list_sql_tables': '列出数据表',
+    'internet_search': 'Exa 网络搜索', 'list_sql_tables': '列出数据表',
     'get_table_data': '预览数据表', 'execute_sql_query': 'SQL 查询',
     'read_file_content': '读取任务附件', 'generate_markdown': '生成 Markdown',
     'convert_md_to_pdf': '转换 PDF',

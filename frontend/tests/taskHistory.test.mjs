@@ -71,3 +71,22 @@ test("blank messages do not create sidebar entries", () => {
   assert.equal(next.tasks.length, 0);
   assert.equal(next.activeTaskId, null);
 });
+
+test("restoring saved tasks keeps existing tasks and mounts only the selected workspace", () => {
+  let history = createTaskHistory("draft");
+  const tasks = Array.from({length:123}, (_,i)=>({id:`task-${i}`,workspaceId:`chat-${i}`,content:`问题${i}`,title:`问题${i}`}));
+  history = taskHistoryReducer(history,{type:"restore",tasks,selectedTaskId:"task-10"});
+  assert.equal(history.tasks.length,123);
+  assert.equal(history.activeTaskId,"task-10");
+  assert.deepEqual(history.workspaceIds,["draft","chat-10"]);
+  history = taskHistoryReducer(history,{type:"restore",tasks:tasks.slice(0,50)});
+  assert.equal(history.tasks.length,123);
+});
+
+test("opening a saved older task lazily adds its workspace", () => {
+  let history=createTaskHistory("draft");
+  history=taskHistoryReducer(history,{type:"restore",tasks:[{id:"old",workspaceId:"old-chat",content:"历史问题",title:"历史问题"}]});
+  history=taskHistoryReducer(history,{type:"select",taskId:"old"});
+  assert.deepEqual(history.workspaceIds,["draft","old-chat"]);
+  assert.equal(history.activeWorkspaceId,"old-chat");
+});

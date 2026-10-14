@@ -1,5 +1,6 @@
 import { API_BASE_URL } from "./config";
-import type { CancelTaskResponse, FileListResponse, TaskResponse, UploadResponse } from "../types";
+import type { CancelTaskResponse, FileListResponse, TaskResponse, UploadResponse, SavedTask } from "../types";
+import type { SidebarTask } from './taskHistory';
 
 function apiUrl(path: string): string {
   return `${API_BASE_URL}${path}`;
@@ -23,7 +24,7 @@ async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Pro
   return payload as T;
 }
 
-export async function startTask(query: string, threadId: string): Promise<TaskResponse> {
+export async function startTask(query: string, threadId: string, taskId?: string): Promise<TaskResponse> {
   return requestJson<TaskResponse>(apiUrl("/api/task"), {
     method: "POST",
     headers: {
@@ -31,9 +32,18 @@ export async function startTask(query: string, threadId: string): Promise<TaskRe
     },
     body: JSON.stringify({
       query,
-      thread_id: threadId
+      thread_id: threadId,
+      task_id: taskId
     })
   });
+}
+
+export function listTaskHistory(before?: number): Promise<{tasks:SidebarTask[];next_cursor:number|null}> {
+  return requestJson(apiUrl('/api/tasks'+(before?`?before=${before}`:'')));
+}
+
+export function getSavedTask(id: string): Promise<SavedTask> {
+  return requestJson(apiUrl('/api/tasks/'+encodeURIComponent(id)));
 }
 
 export async function cancelTask(threadId: string): Promise<CancelTaskResponse> {

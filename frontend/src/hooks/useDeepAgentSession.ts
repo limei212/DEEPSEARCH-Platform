@@ -2,15 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cancelTask, listSessionFiles, startTask, uploadSessionFiles } from "../lib/api";
 import { WS_BASE_URL } from "../lib/config";
 import { createThreadId, getStoredThreadId, storeThreadId } from "../lib/thread";
+import { mergeMonitorEvents } from '../lib/savedHistory';
 import type {
   ConnectionState,
   MonitorMessage,
   OutputFile,
   SocketMessage,
-  UploadedItem
+  UploadedItem,
+  SavedTask
 } from "../types";
-
-const MAX_EVENTS = 120;
 
 function extractString(data: Record<string, unknown>, key: string): string | null {
   const value = data[key];
@@ -25,6 +25,9 @@ export function useDeepAgentSession(initialThreadId?: string) {
   const [threadId, setThreadId] = useState(() => initialThreadId || getStoredThreadId());
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
   const [events, setEvents] = useState<MonitorMessage[]>([]);
+  const [restoredTasks, setRestoredTasks] = useState<SavedTask[]>([]);
+  const currentTaskRef = useRef<string | null>(null);
+  const eventBufferRef = useRef<MonitorMessage[]>([]);
   const [files, setFiles] = useState<OutputFile[]>([]);
   const [sessionPath, setSessionPath] = useState("");
   const [result, setResult] = useState("");
@@ -50,6 +53,9 @@ export function useDeepAgentSession(initialThreadId?: string) {
     const nextThreadId = createThreadId();
     storeThreadId(nextThreadId);
     setThreadId(nextThreadId);
+    currentTaskRef.current=null;
+    eventBufferRef.current=[];
+    setRestoredTasks([]);
     setEvents([]);
     setFiles([]);
     setSessionPath("");
@@ -109,11 +115,32 @@ export function useDeepAgentSession(initialThreadId?: string) {
             return;
           }
 
+          if (payload.type === "history") {
+            setRestoredTasks(payload.tasks);
+            const latest=payload.tasks.at(-1);
+            if (latest && (!currentTaskRef.current || currentTaskRef.current===latest.id)) {
+              currentTaskRef.current=latest.id;
+              const combined=mergeMonitorEvents(latest.events,eventBufferRef.current);
+              eventBufferRef.current=combined;
+              setEvents(combined);
+              const terminal=[...combined].reverse().find(event=>['task_result','error','task_cancelled','task_interrupted'].includes(event.event));
+              setResult(terminal?(extractString(terminal.data,'result')||terminal.message):latest.result);
+              setIsRunning(latest.isRunning && !terminal);
+              setSessionPath(latest.sessionPath);
+              setFiles(latest.files);
+              setLastError(latest.status==='failed'?latest.result:'');
+            }
+            return;
+          }
+
           if (payload.type !== "monitor_event") {
             return;
           }
 
-          setEvents((previous) => [...previous, payload].slice(-MAX_EVENTS));
+          if (payload.task_id && currentTaskRef.current && payload.task_id!==currentTaskRef.current) return;
+          if (payload.task_id) currentTaskRef.current=payload.task_id;
+          eventBufferRef.current=mergeMonitorEvents(eventBufferRef.current,[payload]);
+          setEvents(eventBufferRef.current);
 
           if (payload.event === "session_created") {
             const path = extractString(payload.data, "path");
@@ -193,19 +220,21 @@ export function useDeepAgentSession(initialThreadId?: string) {
   }, [isRunning, refreshFiles, sessionPath]);
 
   const submitTask = useCallback(
-    async (query: string) => {
+    async (query: string, taskId: string = createThreadId()) => {
       const cleanQuery = query.trim();
       if (!cleanQuery) {
         throw new Error("请输入研搜任务");
       }
 
       setIsRunning(true);
+      currentTaskRef.current=taskId;
+      eventBufferRef.current=[];
       setIsCancelling(false);
       setEvents([]);
       setResult("");
       setLastError("");
       try {
-        const response = await startTask(cleanQuery, threadId);
+        const response = await startTask(cleanQuery, threadId, taskId);
         if (response.thread_id && response.thread_id !== threadId) {
           storeThreadId(response.thread_id);
           setThreadId(response.thread_id);
@@ -299,6 +328,7 @@ export function useDeepAgentSession(initialThreadId?: string) {
   return {
     connectionState,
     events,
+    restoredTasks,
     files,
     isCancelling,
     isRunning,

@@ -14,7 +14,9 @@ import {
   ToolOutlined,
 } from "@ant-design/icons";
 import { Button, Tooltip } from "antd";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { useScrollFollow } from "../hooks/useScrollFollow";
+import { getThinkingProgress } from "../lib/thinking";
 import { getDownloadUrl } from "../lib/api";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import type { MonitorMessage, OutputFile } from "../types";
@@ -32,11 +34,13 @@ export interface ChatTurn {
 interface ConversationThreadProps {
   onUseExample: (prompt: string) => void;
   turns: ChatTurn[];
+  onReadingHistory?: () => void;
+  parentFollowing?: () => boolean;
 }
 
 const TASK_EXAMPLES = [
   {
-    tool: "网络搜索工具",
+    tool: "Exa 网络搜索",
     title: "联网趋势研判",
     prompt:
       "请使用网络搜索工具，检索 2026 年跨境电商 AI 客服趋势，列出 5 条关键变化，并附上来源链接。",
@@ -175,19 +179,8 @@ function FileIcon({ name }: { name: string }) {
   return <FileTextOutlined aria-hidden />;
 }
 
-function ThinkingTimeline({ events }: { events: MonitorMessage[] }) {
-  const timelineRef = useRef<HTMLOListElement | null>(null);
-
-  useEffect(() => {
-    const timelineNode = timelineRef.current;
-    if (!timelineNode) {
-      return;
-    }
-
-    window.requestAnimationFrame(() => {
-      timelineNode.scrollTop = timelineNode.scrollHeight;
-    });
-  }, [events.length]);
+function ThinkingTimeline({ events, onReadingHistory, parentFollowing }: { events: MonitorMessage[]; onReadingHistory?: () => void; parentFollowing?: () => boolean }) {
+  const follow = useScrollFollow<HTMLOListElement>(events, true, onReadingHistory, parentFollowing);
 
   if (events.length === 0) {
     return (
@@ -199,8 +192,14 @@ function ThinkingTimeline({ events }: { events: MonitorMessage[] }) {
   }
 
   return (
-    <ol className="thinking-timeline" ref={timelineRef}>
-      {events.map((event, index) => (
+    <ol className="thinking-timeline" ref={follow.containerRef} onScroll={follow.onScroll} onWheel={follow.onWheel} onKeyDown={follow.onKeyDown} onPointerDown={follow.pauseFollow} tabIndex={0} aria-label="思考过程记录">
+      {events.map((event, index) => event.event === "tool_result" ? (
+        <li className="thinking-result-note" key={`${event.timestamp}-${index}`}>
+          <span className="thinking-result-dot" aria-hidden />
+          <span>{typeof event.data.tool_name === "string" ? `${event.data.tool_name} · ` : ""}{event.message}</span>
+          <time dateTime={event.timestamp}>{formatTime(event.timestamp)}</time>
+        </li>
+      ) : (
         <li
           className={`thinking-event thinking-event--${event.event}`}
           key={`${event.timestamp}-${index}`}
@@ -263,7 +262,8 @@ function ArtifactShelf({ files }: { files: OutputFile[] }) {
   );
 }
 
-function ThinkingLoader({ durationLabel }: { durationLabel: string }) {
+function ThinkingLoader({ durationLabel, events }: { durationLabel: string; events: MonitorMessage[] }) {
+  const progress = getThinkingProgress(events);
   return (
     <div
       className="thinking-loader"
@@ -272,7 +272,7 @@ function ThinkingLoader({ durationLabel }: { durationLabel: string }) {
     >
       <div className="loader-status">
         <span className="loader-pulse" aria-hidden />
-        <strong>正在研搜</strong>
+        <strong>正在思考</strong>
         <span className="loader-duration">已思考 {durationLabel}</span>
         <span className="loader-dots" aria-hidden>
           <i />
@@ -280,12 +280,14 @@ function ThinkingLoader({ durationLabel }: { durationLabel: string }) {
           <i />
         </span>
       </div>
-      <div className="loader-track" aria-hidden />
-      <ul className="loader-steps" aria-hidden>
-        <li>理解问题</li>
-        <li>调度工具</li>
-        <li>汇总答案</li>
-      </ul>
+      <ol className="loader-steps" aria-label="任务执行阶段">
+        {["理解问题", "调度工具", "汇总答案"].map((label, index) => (
+          <li key={label} className={`loader-step${index === progress.stage ? " loader-step--active" : index < progress.stage ? " loader-step--done" : ""}`} aria-current={index === progress.stage ? "step" : undefined}>
+            {index < progress.stage ? <CheckCircleOutlined aria-hidden /> : <span className="loader-step-dot" aria-hidden />}
+            <span>{label}</span>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }
@@ -296,8 +298,17 @@ function AssistantMessage({
   isRunning,
   result,
   timestamp,
-}: Pick<ChatTurn, "events" | "files" | "isRunning" | "result" | "timestamp">) {
+  onReadingHistory,
+  parentFollowing,
+}: Pick<ChatTurn, "events" | "files" | "isRunning" | "result" | "timestamp"> & {onReadingHistory?: () => void; parentFollowing?: () => boolean}) {
   const [now, setNow] = useState(Date.now());
+  const hasFinalAnswer = !isRunning && Boolean(result) && events.some((event) => event.event === "task_result");
+  const [thinkingOpen, setThinkingOpen] = useState(!hasFinalAnswer);
+
+  useEffect(() => {
+    if (hasFinalAnswer) setThinkingOpen(false);
+    else if (isRunning) setThinkingOpen(true);
+  }, [hasFinalAnswer, isRunning]);
 
   useEffect(() => {
     if (!isRunning) {
@@ -328,16 +339,17 @@ function AssistantMessage({
 
         <details
           className="thinking-block"
-          open={isRunning || events.length > 0}
+          open={thinkingOpen}
+          onToggle={(event) => setThinkingOpen(event.currentTarget.open)}
         >
           <summary>
             <span>
               <BranchesOutlined aria-hidden />
-              深度研搜过程
+              深度思考过程
             </span>
             <strong>{events.length}</strong>
           </summary>
-          <ThinkingTimeline events={events} />
+          <ThinkingTimeline events={events} onReadingHistory={onReadingHistory} parentFollowing={parentFollowing} />
         </details>
 
         {result ? (
@@ -347,7 +359,7 @@ function AssistantMessage({
         ) : (
           <div className="assistant-answer assistant-answer--pending">
             {isRunning ? (
-              <ThinkingLoader durationLabel={durationLabel} />
+              <ThinkingLoader durationLabel={durationLabel} events={events} />
             ) : (
               "任务完成后会在这里显示最终回复。"
             )}
@@ -375,6 +387,8 @@ function AssistantMessage({
 export function ConversationThread({
   onUseExample,
   turns,
+  onReadingHistory,
+  parentFollowing,
 }: ConversationThreadProps) {
   if (turns.length === 0) {
     return (
@@ -426,6 +440,8 @@ export function ConversationThread({
             </div>
           </article>
           <AssistantMessage
+            onReadingHistory={onReadingHistory}
+            parentFollowing={parentFollowing}
             events={turn.events}
             files={turn.files}
             isRunning={turn.isRunning}

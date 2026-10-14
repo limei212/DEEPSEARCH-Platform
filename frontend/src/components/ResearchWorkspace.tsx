@@ -2,7 +2,9 @@ import { BranchesOutlined } from "@ant-design/icons";
 import { Alert, App as AntApp } from "antd";
 import { useEffect, useRef, useState } from "react";
 import { useDeepAgentSession } from "../hooks/useDeepAgentSession";
+import { useScrollFollow } from "../hooks/useScrollFollow";
 import { createThreadId } from "../lib/thread";
+import { restoreChatTurns } from '../lib/savedHistory';
 import type { UploadedItem } from "../types";
 import { ChatComposer } from "./ChatComposer";
 import { ConversationThread } from "./ConversationThread";
@@ -14,20 +16,31 @@ interface ResearchWorkspaceProps {
   selectedTaskId: string | null;
   onNewTask: () => void;
   onTaskSubmitted: (id: string, workspaceId: string, content: string) => void;
+  onHistoryRestored?: () => void;
 }
 
 export function ResearchWorkspace({
-  workspaceId, isActive, selectedTaskId, onNewTask, onTaskSubmitted
+  workspaceId, isActive, selectedTaskId, onNewTask, onTaskSubmitted, onHistoryRestored
 }: ResearchWorkspaceProps) {
   const { message } = AntApp.useApp();
   const [query, setQuery] = useState("");
   const [stagedItems, setStagedItems] = useState<UploadedItem[]>([]);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
-  const streamRef = useRef<HTMLElement | null>(null);
+  const follow = useScrollFollow<HTMLElement>(turns, isActive);
+  const streamRef = follow.containerRef;
+  const submittedFocusRef = useRef<string | null>(null);
   const submittingRef = useRef(false);
   const activeTurnIdRef = useRef<string | null>(null);
   const previousFocusRef = useRef<{ active: boolean; taskId: string | null }>({ active: false, taskId: null });
   const session = useDeepAgentSession(workspaceId);
+
+  useEffect(() => {
+    if (session.restoredTasks.length) {
+      if (!submittingRef.current) activeTurnIdRef.current=session.restoredTasks.at(-1)!.id;
+      setTurns(previous=>restoreChatTurns(session.restoredTasks,previous));
+    }
+    onHistoryRestored?.();
+  }, [session.restoredTasks, onHistoryRestored]);
 
   useEffect(() => {
     const activeTurnId = activeTurnIdRef.current;
@@ -38,32 +51,37 @@ export function ResearchWorkspace({
         isRunning: session.isRunning, result: session.result
       } : turn);
     });
-  }, [session.events, session.files, session.isRunning, session.result]);
+  }, [session.events, session.files, session.isRunning, session.result, session.restoredTasks]);
 
   useEffect(() => {
     const selectionChanged = !previousFocusRef.current.active || previousFocusRef.current.taskId !== selectedTaskId;
-    previousFocusRef.current = { active: isActive, taskId: selectedTaskId };
     const stream = streamRef.current;
-    if (!isActive || !stream) return;
+    if (!isActive) {
+      previousFocusRef.current.active = false;
+      return;
+    }
+    if (!stream || !selectionChanged) return;
 
     const frame = window.requestAnimationFrame(() => {
       if (turns.length === 0) {
+        follow.pauseFollow();
         stream.scrollTo({ top: 0 });
-        return;
-      }
-      if (selectionChanged && selectedTaskId) {
+        if (selectedTaskId) return;
+      } else if (selectedTaskId === submittedFocusRef.current) {
+        submittedFocusRef.current = null;
+        follow.resumeFollow();
+        stream.scrollTo({ top: stream.scrollHeight });
+      } else if (selectedTaskId) {
         const selectedTurn = stream.querySelector<HTMLElement>(`[data-task-id="${selectedTaskId}"]`);
         if (selectedTurn) {
+          follow.pauseFollow();
           stream.scrollTo({
             top: selectedTurn.getBoundingClientRect().top - stream.getBoundingClientRect().top + stream.scrollTop,
-            behavior: "smooth"
+            behavior: "auto"
           });
-          return;
-        }
+        } else return;
       }
-      if (!selectedTaskId || selectedTaskId === turns[turns.length - 1]?.id) {
-        stream.scrollTo({ top: stream.scrollHeight, behavior: "smooth" });
-      }
+      previousFocusRef.current = { active: true, taskId: selectedTaskId };
     });
     return () => window.cancelAnimationFrame(frame);
   }, [isActive, selectedTaskId, turns]);
@@ -80,12 +98,14 @@ export function ResearchWorkspace({
       result: "", timestamp: new Date().toISOString()
     };
     submittingRef.current = true;
+    follow.resumeFollow();
+    submittedFocusRef.current = nextTurn.id;
     activeTurnIdRef.current = nextTurn.id;
     setTurns((previous) => [...previous, nextTurn]);
     setQuery("");
     onTaskSubmitted(nextTurn.id, workspaceId, content);
     try {
-      await session.submitTask(content);
+      await session.submitTask(content, nextTurn.id);
       message.success("任务已启动，执行过程会显示在对话中");
     } catch (error) {
       activeTurnIdRef.current = null;
@@ -126,13 +146,13 @@ export function ResearchWorkspace({
         {session.isRunning ? (
           <div className="run-indicator run-indicator--live">
             <BranchesOutlined aria-hidden />
-            研搜中
+            正在思考
           </div>
         ) : null}
       </header>
       {session.lastError ? <Alert className="chat-alert" message={session.lastError} showIcon type="error" /> : null}
-      <section className="chat-stream-panel" ref={streamRef}>
-        <ConversationThread onUseExample={setQuery} turns={turns} />
+      <section className="chat-stream-panel" ref={streamRef} onScroll={follow.onScroll} onWheel={follow.onWheel} onKeyDown={follow.onKeyDown} onPointerDown={follow.pauseFollow} tabIndex={0} aria-label="研搜对话阅读区">
+        <ConversationThread onUseExample={setQuery} turns={turns} onReadingHistory={follow.pauseFollow} parentFollowing={follow.isFollowing} />
       </section>
       <ChatComposer
         isCancelling={session.isCancelling} isRunning={session.isRunning} isUploading={session.isUploading}

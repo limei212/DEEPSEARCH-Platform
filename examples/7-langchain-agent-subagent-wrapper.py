@@ -37,7 +37,7 @@ def search_public_web(query: str) -> str:
         query: 用户关注的研究主题或关键词。
 
     返回:
-        模拟的公开资料摘要。真实项目中可以替换为 Tavily、搜索引擎 API 或爬虫服务。
+        模拟的公开资料摘要。真实项目中可以替换为 Exa、搜索引擎 API 或爬虫服务。
     """
     print(f"【LangChain Tool】检索公开资料：{query}")
     return (

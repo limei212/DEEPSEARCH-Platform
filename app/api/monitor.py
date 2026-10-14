@@ -14,6 +14,7 @@ from typing import Any, Optional
 from fastapi import WebSocket
 
 from app.api.context import get_thread_context
+from app.api.task_store import current_task_id, get_task_store
 
 test_trace: ContextVar[list | None] = ContextVar('test_trace', default=None)
 
@@ -59,6 +60,9 @@ class ToolMonitor:
             "timestamp": datetime.datetime.now().isoformat(),
         }
 
+        task_id = current_task_id.get()
+        if task_id:
+            payload = get_task_store().append(task_id, payload)
         trace = test_trace.get()
         if trace is not None:
             trace.append(payload)

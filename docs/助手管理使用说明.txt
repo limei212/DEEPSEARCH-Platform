@@ -34,3 +34,7 @@ DeepSearch Agent 管理
 
 本次验证覆盖配置版本隔离、JSON Schema、密钥保护、文件边界，以及本地 MCP stdio/HTTP 协议和 RAGFlow 接口替身。
 公司实际 RAGFlow、远程 MCP、真实模型的联合运行，需要填写可用服务和密钥后在测试面板确认。
+
+联网搜索已切换为 Exa：在根目录 .env 配置 EXA_API_KEY，重启后端。
+默认返回 5 条结果及摘录；请求正文时每页最多 12000 字符。
+news 对应 Exa 新闻分类；finance/general 使用原问题通用检索，不限定为财报。

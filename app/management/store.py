@@ -59,7 +59,7 @@ class ConfigStore:
         resource = self.save_resource(ResourceConfig(id='ragflow-default', kind='knowledge', name='RAGFlow 默认连接', config={
             'url':os.getenv('RAGFLOW_API_URL', 'http://127.0.0.1:9380'), 'secret_env':'RAGFLOW_API_KEY',
         }))
-        defaults = [('tavily','research',['internet_search']), ('db','database',['list_sql_tables','get_table_data','execute_sql_query']), ('ragflow','knowledge',[])]
+        defaults = [('exa','research',['internet_search']), ('db','database',['list_sql_tables','get_table_data','execute_sql_query']), ('ragflow','knowledge',[])]
         for key, icon, tools in defaults:
             data = sub_agents_content[key]
             config = AgentConfig(id=f'builtin-{key}', name=data['name'], description=data['description'], system_prompt=data['system_prompt'], icon=icon, builtin_tools=tools,

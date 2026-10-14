@@ -41,7 +41,7 @@ def runtime_status(agent, resources):
         return 'disabled'
     if not key_configured(os.getenv('OPENAI_API_KEY')):
         return 'unconfigured'
-    if 'internet_search' in agent['builtin_tools'] and not key_configured(os.getenv('TAVILY_API_KEY')):
+    if 'internet_search' in agent['builtin_tools'] and not key_configured(os.getenv('EXA_API_KEY')):
         return 'unconfigured'
     if any(name in agent['builtin_tools'] for name in ['execute_sql_query','list_sql_tables','get_table_data']) and not os.getenv('MYSQL_HOST'):
         return 'unconfigured'
@@ -69,7 +69,7 @@ def model_for(agent):
 
 
 def builtin_tools():
-    from app.tools.tavily_tool import internet_search
+    from app.tools.exa_tool import internet_search
     from app.tools.db_tools import list_sql_tables, get_table_data, execute_sql_query
     from app.tools.upload_file_read_tool import read_file_content
     from app.tools.markdown_tools import generate_markdown

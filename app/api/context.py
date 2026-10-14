@@ -58,6 +58,10 @@ def get_thread_context() -> Optional[str]:
     return _thread_id_ctx.get()
 
 
+def reset_thread_context(token) -> None:
+    _thread_id_ctx.reset(token)
+
+
 def reset_session_context(
     session_token: Token[Optional[str]],
     thread_token: Optional[Token[Optional[str]]] = None,

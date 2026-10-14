@@ -46,7 +46,7 @@ main_agent:
 # 子智能体配置：description 给主智能体判断是否调用，system_prompt 给子智能体约束执行方式
 sub_agents:
   # 网络搜索助手只处理互联网公开信息；数据库和 RAGFlow 私有知识库由其他助手负责
-  tavily:
+  exa:
     name: "网络搜索助手"
     description: |
       负责进行网络知识搜索的智能体助手，当需要从网络中查询数据的时候，可以执行数据检索，在检索后会返回一段检索结果。

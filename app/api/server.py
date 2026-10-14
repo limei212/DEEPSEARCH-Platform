@@ -19,6 +19,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Query,
     UploadFile,
     WebSocket,
     WebSocketDisconnect,
@@ -28,7 +29,9 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app.agent.main_agent import run_deep_agent
-from app.api.monitor import manager
+from app.api.monitor import manager, monitor
+from app.api.task_store import get_task_store, current_task_id
+from app.api.context import set_thread_context, reset_thread_context
 from app.management.api import router as management_router, frontend_origins
 from app.management.store import get_store
 
@@ -42,6 +45,7 @@ async def lifespan(_app: FastAPI):
     """
     loop = asyncio.get_running_loop()
     manager.set_loop(loop)
+    get_task_store().recover_interrupted()
     print(f"[Server] WebSocket Manager bound to loop: {id(loop)}")
     yield
 
@@ -79,6 +83,36 @@ class TaskRequest(BaseModel):
 
     query: str
     thread_id: str | None = Field(default=None, pattern=r'^[a-zA-Z0-9_-]{1,100}$')
+    task_id: str | None = Field(default=None, pattern=r'^[a-zA-Z0-9_-]{1,100}$')
+
+
+@app.get('/api/tasks')
+def task_history(before: int | None = Query(default=None, ge=1), limit: int = Query(default=50,ge=1,le=100)):
+    return get_task_store().list(before=before,limit=limit)
+
+
+@app.get('/api/tasks/{task_id}')
+def task_detail(task_id: str):
+    try: return get_task_store().get(task_id)
+    except KeyError: raise HTTPException(status_code=404,detail='任务不存在') from None
+
+
+async def execute_persisted(query, thread_id, snapshot, task_id):
+    token = current_task_id.set(task_id)
+    thread_token = set_thread_context(thread_id)
+    try:
+        await run_deep_agent(query, thread_id, snapshot)
+    except asyncio.CancelledError:
+        if get_task_store().get(task_id)['isRunning']:
+            monitor.report_task_cancelled()
+        raise
+    except Exception as error:
+        monitor._emit('error',str(error))
+    finally:
+        if get_task_store().get(task_id)['isRunning']:
+            monitor._emit('error','执行已结束，但未收到完整答案；已保留执行过程。')
+        current_task_id.reset(token)
+        reset_thread_context(thread_token)
 
 
 def _forget_task(thread_id: str, task: asyncio.Task) -> None:
@@ -92,6 +126,19 @@ def _forget_task(thread_id: str, task: asyncio.Task) -> None:
         active_tasks.pop(thread_id, None)
 
 
+def finish_persisted(thread_id, task_id, task):
+    # 即使协程在首次执行前被取消，也要将已接收的任务保存为取消状态。
+    if task.cancelled() and get_task_store().get(task_id)['isRunning']:
+        token = current_task_id.set(task_id)
+        thread_token = set_thread_context(thread_id)
+        try:
+            monitor.report_task_cancelled()
+        finally:
+            current_task_id.reset(token)
+            reset_thread_context(thread_token)
+    _forget_task(thread_id, task)
+
+
 @app.post("/api/task")
 async def run_task(request: TaskRequest):
     """
@@ -101,6 +148,14 @@ async def run_task(request: TaskRequest):
     答案都会由 monitor 通过 `/ws/{thread_id}` 推送给同一会话的前端。
     """
     thread_id = request.thread_id or str(uuid.uuid4())
+    task_id = request.task_id or str(uuid.uuid4())
+    if not request.query.strip():
+        raise HTTPException(status_code=422,detail='任务内容不能为空')
+    snapshot = get_store().snapshot()
+    try:
+        get_task_store().create(task_id, thread_id, request.query.strip())
+    except ValueError as error:
+        raise HTTPException(status_code=409,detail=str(error)) from None
 
     # 同一个 thread_id 只保留一个活跃任务，新任务会先取消旧任务，避免并发写同一会话目录
     old_task = active_tasks.get(thread_id)
@@ -108,12 +163,11 @@ async def run_task(request: TaskRequest):
         old_task.cancel()
 
     # create_task 把长耗时 Agent 执行交给事件循环，接口本身不用等待最终结果
-    snapshot = get_store().snapshot()
-    task = asyncio.create_task(run_deep_agent(request.query, thread_id, snapshot))
+    task = asyncio.create_task(execute_persisted(request.query, thread_id, snapshot, task_id))
     active_tasks[thread_id] = task
-    task.add_done_callback(lambda finished_task: _forget_task(thread_id, finished_task))
+    task.add_done_callback(lambda finished_task: finish_persisted(thread_id, task_id, finished_task))
 
-    return {"status": "started", "thread_id": thread_id}
+    return {"status": "started", "thread_id": thread_id, "task_id": task_id}
 
 
 @app.post("/api/task/{thread_id}/cancel")
@@ -277,8 +331,8 @@ async def websocket_endpoint(websocket: WebSocket, thread_id: str):
 
     # 连接建立后立即按 thread_id 注册，monitor 后续才能把事件定向推给当前页面
     await manager.connect(websocket, thread_id)
-
     try:
+        await websocket.send_json({'type':'history','tasks':get_task_store().workspace(thread_id)})
         while True:
             # 前端通常发送 ping 心跳；服务端回复 pong，顺便维持连接活跃
             data = await websocket.receive_text()
