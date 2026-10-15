@@ -1,0 +1,42 @@
+Playwright MCP 接入与完整流程测试
+日期：2026-10-15（Asia/Shanghai）
+
+接入结果
+资源中心 → MCP：Playwright MCP 浏览器，状态“可用”，发现 25 个工具。
+直接绑定现有网络搜索助手 builtin-tavily，发布为 v2；保持原有 Exa 能力。
+助手总数仍为 4，未新建助手；保留网络搜索助手原来的侧栏位置和历史配置版本。
+本地 stdio、Node.js 24、Playwright MCP 0.0.83、本机 Microsoft Edge，无界面运行，会话隔离。
+运行依赖位于 .local-run/playwright-mcp；配置保存在 .agent-data/config.sqlite3。
+
+已验证流程
+1. 使用项目原生 MCP 客户端发现 25 个工具，并实际打开公开网址 https://example.com/，返回 Example Domain。
+2. HTTP 提交聊天任务 → 主 Agent → 网络搜索助手 → browser_navigate 打开测试页 → browser_snapshot → browser_click 点击“加载产品数据” → browser_wait_for → browser_snapshot 读取动态表格 → 主 Agent 生成 Markdown → 文件接口下载。
+   虚拟测试数据：澄野 129元/600毫升，青禾 159元/750毫升，远山 199元/1000毫升。
+   答案、最低价格与最大容量判断均正确，Markdown 下载内容核对通过。
+   测试网页完全为本次生成的虚拟资料，不含用户资料。初次测试中的控制台 404 已确认为缺少 favicon.ico，不影响动态数据与报告生成。
+3. Exa 搜索 Python 官方 About 页 → Playwright 实际访问 → 读取快照 → DeepSeek 汇总页面标题与特点，注明 python.org 来源。
+   此站点浏览器导航发生 domcontentloaded 等待超时，但页面内容已经加载；助手在收到工具错误后继续用 browser_snapshot 读取实际页面，整项任务成功完成。
+4. 浏览器页面确认资源可用、网络搜索助手已勾选 MCP 与 12 个工具；刷新后仍保留。
+5. 重启后端后资源保持 ready，网络搜索助手仍为 enabled，Exa + Playwright 实测通过。
+
+联调修正
+此前 MCP isError 返回被作为未处理异常抛出，单个页面超时可能中断整项任务。
+现改为 LangChain ToolException + handle_tool_error，让模型收到 status=error 的工具消息，并可继续处理；工具错误仍显示在执行过程。
+嵌套 TaskGroup 异常会提取具体原因，保留可读的模型繁忙提示。
+真实 MCP Fixture 回归测试验证：同一连接先访问失败，再读取成功，连接与后续流程未中断。
+全部后端 64 项测试通过。
+
+已勾选 12 个工具
+browser_navigate、browser_navigate_back、browser_snapshot、browser_click、browser_type、browser_press_key、browser_select_option、browser_wait_for、browser_tabs、browser_close、browser_take_screenshot、browser_find。
+
+使用示例
+请使用网络搜索助手，通过 Playwright 打开指定公开网址，阅读页面并总结三条要点，附来源链接。
+或：先搜索品牌官网，再用 Playwright 打开页面，对比主推产品和价格，附来源。
+
+说明
+公共网站的网络、页面脚本与访问限制可能导致局部工具超时。已完成的是工具接入、错误恢复和上述真实链路验证，不保证任意网站都能访问。
+本机安装路径不随源码自动迁移，另一台电脑需按 docs/Playwright-MCP使用说明.txt 安装并调整路径。
+动态测试页面为临时联调服务，测试完成后停止；生成的任务历史与 Markdown 报告保留。
+
+动态页面任务：playwright-test-c0e4d7d6-e47a-4fd9-a15d-fcd5b59cb2ba
+Exa 联用任务：playwright-exa-0fc6a142-aca6-4ee0-98d3-bdd794cd2a1f

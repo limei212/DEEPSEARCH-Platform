@@ -16,7 +16,7 @@ from .models import AgentConfig, ResourceConfig, BUILTIN_TOOLS
 from .store import ConflictError, get_store
 from .connectors import import_skill, probe_resource, redact_error
 from .contracts import render_prompt, resolve_input, validate_config
-from .runtime import runtime_status, run_single
+from .runtime import runtime_status, run_single, model_error_message
 
 load_dotenv(Path(__file__).resolve().parents[2] / '.env')
 
@@ -141,7 +141,7 @@ async def test_agent(request: TestRequest):
         files = [{'name':file.name,'path':str(file)} for file in directory.iterdir() if file.is_file()]
         return public_test_result({'status':'success','result':result,'events':trace,'files':files,'input':request.values,'revision':config['revision']}, resources)
     except Exception as error:
-        message = str(error)
+        message = model_error_message(error)
         for resource in resources.values():
             if resource.get('secret'):
                 message = message.replace(resource['secret'],'[密钥已隐藏]')

@@ -25,6 +25,7 @@ venv/
 env/
 .env
 .agent-data/
+.model-cache/
 .local-run/
 frontend/.env.local
 frontend/.env.*.local

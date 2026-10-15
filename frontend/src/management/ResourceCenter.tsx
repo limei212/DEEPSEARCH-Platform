@@ -8,6 +8,7 @@ import { App, Button, Empty, Input, Tabs, Tag } from "antd";
 import { useState } from "react";
 import { probeResource } from "./api";
 import { ResourceForm } from "./ResourceForm";
+import { DocumentRetrieval } from './DocumentRetrieval';
 import { kindLabels, statusLabels } from "./types";
 import type { Resource, ResourceKind } from "./types";
 
@@ -53,15 +54,15 @@ export function ResourceCenter({
           </Button>
           <span className="panel-kicker">RESOURCE CENTER</span>
           <h2>连接资源，让能力协同</h2>
-          <p>知识库、技能与工具统一管理，可供多个助手连接使用。</p>
+          <p>文档随任务检索，技能与工具可供多个助手连接使用。</p>
         </div>
-        <Button
+        {kind !== 'knowledge' && <Button
           type="primary"
           icon={<PlusOutlined />}
           onClick={() => setEditing("new")}
         >
           新增{kindLabels[kind]}
-        </Button>
+        </Button>}
       </header>
       <div className="management-content">
         <Tabs
@@ -72,14 +73,16 @@ export function ResourceCenter({
             label,
           }))}
         />
+        {kind === 'knowledge' && <DocumentRetrieval />}
         <Input.Search
+          style={kind==='knowledge'?{display:'none'}:undefined}
           aria-label="搜索资源"
           placeholder="搜索资源名称或说明"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="resource-search"
         />
-        {!filtered.length && (
+        {kind !== 'knowledge' && !filtered.length && (
           <div className="settings-card">
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -87,7 +90,7 @@ export function ResourceCenter({
             />
           </div>
         )}
-        <div className="resource-grid">
+        <div className="resource-grid" style={kind==='knowledge'?{display:'none'}:undefined}>
           {filtered.map((resource) => (
             <article className="settings-card resource-card" key={resource.id}>
               <div className="settings-heading">

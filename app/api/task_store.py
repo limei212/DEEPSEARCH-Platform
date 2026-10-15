@@ -81,7 +81,7 @@ class TaskStore:
 
     def metadata(self, row):
         return {'id':row['id'],'workspaceId':row['workspace'],'content':row['query'],
-                'title':row['query'].strip()[:8],'timestamp':row['created_at'],'status':row['status']}
+                'title':' '.join(row['query'].split()),'timestamp':row['created_at'],'status':row['status']}
 
     def list(self, *, before=None, limit=50):
         with self.connect() as db:

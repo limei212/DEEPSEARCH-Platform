@@ -10,7 +10,7 @@ import asyncio
 import shutil
 from pathlib import Path
 
-from app.management.runtime import build_main_agent
+from app.management.runtime import build_main_agent, model_error_message
 from app.management.store import get_store
 from app.api.context import (
     reset_session_context,
@@ -18,12 +18,19 @@ from app.api.context import (
     set_thread_context,
 )
 from app.api.monitor import monitor
+from app.rag.session import document_scope
 
 # 当前文件位于 app/agent/main_agent.py，parents[1] 即 app 目录
 project_root_path = Path(__file__).parents[1].resolve()
 
 
 async def run_deep_agent(task_query, session_id, snapshot=None):
+    upload_dir=project_root_path/'updated'/f'session_{session_id}'
+    async with document_scope(upload_dir):
+        await _run_deep_agent(task_query,session_id,snapshot)
+
+
+async def _run_deep_agent(task_query, session_id, snapshot=None):
     """
     异步流式执行主智能体
 
@@ -55,11 +62,11 @@ async def run_deep_agent(task_query, session_id, snapshot=None):
                 # copy2 会保留上传文件的修改时间、权限等元数据，便于后续排查文件来源
                 shutil.copy2(updated_dir_path / filename, session_dir / filename)
 
-            # 把上传文件列表注入用户消息，提醒模型先调用 read_file_content 获取附件内容
+            # 只提供文件名，由文档助手提取文本并建立本次任务索引。
             updated_info_prompt = (
                 "\n    [已上传文件] 已加载到工作目录:\n"
                 + "\n".join([f"    - {f}" for f in files])
-                + "\n    请优先使用工具（read_file_content）读取并参考这些文件。"
+                + "\n    请调用文档检索助手，先通过 search_task_documents 检索这些附件并引用原文依据。"
             )
 
     # ContextVar 让深层工具无需显式传参，也能拿到当前会话目录和 WebSocket thread_id
@@ -69,7 +76,7 @@ async def run_deep_agent(task_query, session_id, snapshot=None):
     # 前端拿到工作目录后，可以展示本次任务生成的 Markdown/PDF 等产物
     monitor.report_session_dir(session_dir_str)
 
-    # checkpointer 依赖 thread_id 区分会话记忆；同一 session_id 会复用同一条执行上下文
+    # 每轮创建新的执行图和 checkpoint，避免旧检索片段隐式成为新任务的文档记忆。
     config = {"configurable": {"thread_id": session_id}}
 
     # 工作环境指令是运行时动态补充的，约束模型只在当前会话目录读写文件
@@ -80,7 +87,7 @@ async def run_deep_agent(task_query, session_id, snapshot=None):
 
     规则：
     1. 新生成文件必须保存到工作目录：'{relative_session_dir_str}/filename'
-    2. 读取已上传的文件时，请直接将文件名（例如：'开篇.txt'）作为 filename 参数传入（read_file_content）读取工具，不要带上任何目录前缀。
+    2. 查询附件内容时，调度文档检索助手使用 search_task_documents；filename 只填文件名，不带目录。不要直接读取 PDF/DOCX 二进制文件。
     3. 使用相对路径，禁止使用绝对路径
     4. 若存在上传文件，请先分析内容
     """
@@ -127,7 +134,7 @@ async def run_deep_agent(task_query, session_id, snapshot=None):
         raise
     except Exception as e:
         # 异步执行异常也走 monitor，保证前端能收到明确错误事件
-        monitor._emit("error", f"执行主智能发生异常信息：{str(e)}")
+        monitor._emit("error", model_error_message(e))
     finally:
         # 任务结束后恢复 ContextVar，避免后续请求复用到本次会话目录或 thread_id
         reset_session_context(session_dir_token, session_id_token)

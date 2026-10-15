@@ -46,6 +46,10 @@ export function getSavedTask(id: string): Promise<SavedTask> {
   return requestJson(apiUrl('/api/tasks/'+encodeURIComponent(id)));
 }
 
+export function listUploadedFiles(threadId:string):Promise<{files:{name:string;size:number}[]}> {
+  return requestJson(apiUrl('/api/uploads/'+encodeURIComponent(threadId)));
+}
+
 export async function cancelTask(threadId: string): Promise<CancelTaskResponse> {
   return requestJson<CancelTaskResponse>(apiUrl(`/api/task/${encodeURIComponent(threadId)}/cancel`), {
     method: "POST"

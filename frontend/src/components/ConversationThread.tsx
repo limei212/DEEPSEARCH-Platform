@@ -49,23 +49,17 @@ const TASK_EXAMPLES = [
   {
     tool: "数据库查询工具",
     title: "药品库存排查",
+    disabled: true,
     prompt:
-      "请请使用数据库查询工具，查询库存大于 100 的药品，按库存量升序列出药品名称、批次号、仓库位置和过期日期。",
+      "请使用数据库查询工具，查询库存大于 100 的药品，按库存量升序列出药品名称、批次号、仓库位置和过期日期。",
     icon: <DatabaseOutlined aria-hidden />,
   },
   {
-    tool: "RAGFlow 知识库",
+    tool: "文档检索助手",
     title: "内部文档问答",
     prompt:
-      "请使用 RAGFlow 助手，查询公司内部白皮书中关于品类策略的内容，并整理成三条可执行建议。",
+      "请使用文档检索助手，查询我上传的白皮书中关于品类策略的内容，整理三条可执行建议，并注明文件名和出处。",
     icon: <FileSearchOutlined aria-hidden />,
-  },
-  {
-    tool: "文件读取工具",
-    title: "上传文件分析",
-    prompt:
-      "请使用文件读取工具，读取我上传的文件，提炼核心观点、风险点和待补充信息，并给出下一步分析计划。",
-    icon: <FileTextOutlined aria-hidden />,
   },
   {
     tool: "Markdown/PDF 工具",
@@ -407,12 +401,14 @@ export function ConversationThread({
               <button
                 className="example-card"
                 key={example.tool}
+                disabled={example.disabled}
+                title={example.disabled ? "数据库功能暂不可用" : undefined}
                 onClick={() => onUseExample(example.prompt)}
                 type="button"
               >
                 <span className="example-icon">{example.icon}</span>
                 <span className="example-copy">
-                  <span>{example.tool}</span>
+                  <span>{example.tool}{example.disabled ? " · 暂不可用" : ""}</span>
                   <strong>{example.title}</strong>
                   <small>{example.prompt}</small>
                 </span>

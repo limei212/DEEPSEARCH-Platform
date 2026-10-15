@@ -34,6 +34,7 @@ from app.api.task_store import get_task_store, current_task_id
 from app.api.context import set_thread_context, reset_thread_context
 from app.management.api import router as management_router, frontend_origins
 from app.management.store import get_store
+from app.management.runtime import model_error_message
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -107,7 +108,7 @@ async def execute_persisted(query, thread_id, snapshot, task_id):
             monitor.report_task_cancelled()
         raise
     except Exception as error:
-        monitor._emit('error',str(error))
+        monitor._emit('error',model_error_message(error))
     finally:
         if get_task_store().get(task_id)['isRunning']:
             monitor._emit('error','执行已结束，但未收到完整答案；已保留执行过程。')
@@ -230,6 +231,16 @@ async def upload_files(files: List[UploadFile] = File(...), thread_id: str = For
         saved_files.append(file.filename)
 
     return {"status": "uploaded", "files": saved_files}
+
+
+@app.get('/api/uploads/{thread_id}')
+async def uploaded_files(thread_id:str):
+    import re
+    if not re.fullmatch(r'[a-zA-Z0-9_-]{1,100}',thread_id):
+        raise HTTPException(status_code=422,detail='无效的会话标识')
+    directory=updated_dir/f'session_{thread_id}'
+    files=[{'name':file.name,'size':file.stat().st_size} for file in sorted(directory.iterdir()) if file.is_file() and not file.is_symlink()] if directory.is_dir() else []
+    return {'files':files}
 
 
 @app.get("/api/download")

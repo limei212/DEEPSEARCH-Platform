@@ -27,8 +27,13 @@ class TaskHistoryTests(unittest.TestCase):
         self.assertEqual(task['result'],'保留完整答案')
         self.assertEqual(len(task['events']),151)
         self.assertEqual(task['content'],'请查询公司白皮书中的品类策略')
-        self.assertEqual(task['title'],'请查询公司白皮书')
+        self.assertEqual(task['title'],'请查询公司白皮书中的品类策略')
         self.assertFalse(task['isRunning'])
+
+    def test_list_keeps_complete_titles_and_normalizes_line_breaks(self):
+        self.store.create('long-title','chat','  😀请查询公司白皮书\n中的品类策略及风险  ')
+        title=self.store.list()['tasks'][0]['title']
+        self.assertEqual(title,'😀请查询公司白皮书 中的品类策略及风险')
 
     def test_pagination_reaches_every_task_once(self):
         for index in range(123):

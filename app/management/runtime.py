@@ -9,22 +9,27 @@ from deepagents.backends import FilesystemBackend
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableLambda
-from langchain_core.tools import StructuredTool
+from langchain_core.tools import StructuredTool, ToolException
 from langchain_core.callbacks import AsyncCallbackHandler
 from langgraph.checkpoint.memory import InMemorySaver
 
 from app.api.monitor import monitor
 from .connectors import mcp_session, rag_request, safe_skill_path, mcp_tool_name
 from .contracts import input_schema, render_prompt, resolve_input, validate_output
+from app.rag.session import document_scope, upload_directory
 
-checkpointer = InMemorySaver()
-register_harness_profile('openai', HarnessProfile(general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False), excluded_tools=frozenset({'execute'})))
+# Keep attachment reads in our text extraction tools. The generic read_file
+# returns binary content blocks for PDF/DOCX, unsupported by DeepSeek.
+register_harness_profile('openai', HarnessProfile(general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False), excluded_tools=frozenset({'execute','read_file'})))
 
 
 class ToolTrace(AsyncCallbackHandler):
     async def on_tool_end(self, output, *, run_id, **kwargs):
         value = output.content if hasattr(output, 'content') else str(output)
-        monitor._emit('tool_result', '工具已返回结果', {'result': str(value)[:12000]})
+        if getattr(output,'status',None)=='error':
+            monitor._emit('tool_error','工具执行失败',{'reason':str(value)[:1500],'tool_name':getattr(output,'name','')})
+        else:
+            monitor._emit('tool_result', '工具已返回结果', {'result': str(value)[:12000]})
 
     async def on_tool_error(self, error, *, run_id, **kwargs):
         monitor._emit('tool_error', '工具执行失败', {'reason': str(error)[:1500]})
@@ -65,16 +70,34 @@ def model_for(agent):
     name = agent.get('model_name') or os.getenv('LLM_QWEN_MAX')
     if not name:
         raise ValueError('尚未配置模型名称 LLM_QWEN_MAX')
-    return init_chat_model(model=name,model_provider='openai',timeout=60,max_retries=1)
+    # The SDK retries only the failed model HTTP request (with backoff), rather
+    # than replaying an agent run that may already have executed tools.
+    return init_chat_model(model=name,model_provider='openai',timeout=60,max_retries=4)
+
+
+def model_error_message(error):
+    if isinstance(error,ExceptionGroup):
+        return '; '.join(dict.fromkeys(model_error_message(child) for child in error.exceptions[:3]))
+    if getattr(error,'status_code',None)!=503:
+        return str(error)
+    message='模型服务暂时繁忙（HTTP 503），本次任务未能完成。请稍后重试；若持续出现，请联系管理员切换模型服务。'
+    identifier=getattr(error,'request_id',None)
+    if not identifier:
+        match=re.search(r'request_id\s*[:=]\s*([A-Za-z0-9._-]+)',str(getattr(error,'body','')))
+        identifier=match.group(1) if match else None
+    if identifier and re.fullmatch(r'[A-Za-z0-9._-]{1,128}',identifier):
+        message+=' 请求编号：'+identifier
+    return message
 
 
 def builtin_tools():
     from app.tools.exa_tool import internet_search
     from app.tools.db_tools import list_sql_tables, get_table_data, execute_sql_query
     from app.tools.upload_file_read_tool import read_file_content
+    from app.tools.document_search_tool import search_task_documents
     from app.tools.markdown_tools import generate_markdown
     from app.tools.pdf_tools import convert_md_to_pdf
-    return {item.name:item for item in [internet_search,list_sql_tables,get_table_data,execute_sql_query,read_file_content,generate_markdown,convert_md_to_pdf]}
+    return {item.name:item for item in [internet_search,list_sql_tables,get_table_data,execute_sql_query,read_file_content,generate_markdown,convert_md_to_pdf,search_task_documents]}
 
 
 @asynccontextmanager
@@ -136,12 +159,13 @@ async def connected_tools(agent, resources):
                         monitor.report_tool(spec.name,arguments)
                         result = await session.call_tool(spec.name,arguments)
                         if result.isError:
-                            raise ValueError('MCP 工具返回错误：'+str(result.content))
+                            text='\n'.join(getattr(block,'text','') for block in result.content)
+                            raise ToolException('MCP 工具返回错误：'+(text or '工具未提供错误详情')[:3000])
                         serialized = result.model_dump(mode='json')
                         monitor._emit('tool_result','MCP 工具已返回结果',{'tool_name':spec.name,'result':serialized})
                         return json.dumps(serialized,ensure_ascii=False)
                     name = mcp_tool_name(resource['id'], spec.name)
-                    return StructuredTool.from_function(coroutine=call,name=name,description=spec.description or spec.name,args_schema=spec.inputSchema)
+                    return StructuredTool.from_function(coroutine=call,name=name,description=spec.description or spec.name,args_schema=spec.inputSchema,handle_tool_error=True)
                 tools.append(wrapper())
             if not set(binding['tools']) <= {item.name for item in discovered}:
                 raise ValueError('MCP 工具清单已变化，请刷新资源连接并重新选择工具')
@@ -149,6 +173,11 @@ async def connected_tools(agent, resources):
 
 
 async def run_single(agent, resources, values, directory: Path, *, runnable_config=None, context=''):
+    async with document_scope(upload_directory(directory),reuse=True):
+        return await _run_single(agent,resources,values,directory,runnable_config=runnable_config,context=context)
+
+
+async def _run_single(agent, resources, values, directory: Path, *, runnable_config=None, context=''):
     inputs = resolve_input(agent,values,files=[file.name for file in directory.iterdir() if file.is_file()], context=context)
     previous_files = {file.name:file.stat().st_mtime_ns for file in directory.iterdir() if file.is_file()}
     prompt = render_prompt(agent,inputs,resources)
@@ -187,5 +216,5 @@ def build_main_agent(snapshot, directory, task_context=''):
     instruction = '\n\n当前可用助手只来自下列配置，禁止调用未列出的助手。调用 task 时 subagent_type 使用对应 ID，description 中用 JSON 提供助手要求的输入字段。未配置或未启用的助手不可调度；没有合适助手时说明缺少的能力。\n'+json.dumps([{'id':agent['id'],'name':agent['name'],'description':agent['description']} for agent in available_agents],ensure_ascii=False)
     library = builtin_tools()
     return create_deep_agent(model=model_for({}),system_prompt=main_agent_content['system_prompt']+instruction,
-        tools=[library[name] for name in ['generate_markdown','convert_md_to_pdf','read_file_content']],checkpointer=checkpointer,
+        tools=[library[name] for name in ['generate_markdown','convert_md_to_pdf']],checkpointer=InMemorySaver(),
         backend=FilesystemBackend(root_dir=directory,virtual_mode=True),subagents=subagents)

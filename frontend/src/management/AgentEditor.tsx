@@ -25,6 +25,7 @@ import {
   saveAgent,
 } from "./api";
 import { ConnectionsChooser } from "./ConnectionsChooser";
+import { DocumentRetrieval } from './DocumentRetrieval';
 import { IOEditor } from "./IOEditor";
 import { ResourceForm } from "./ResourceForm";
 import { TestDrawer } from "./TestDrawer";
@@ -255,7 +256,7 @@ export function AgentEditor({
                   <section className="settings-card">
                     <h3>内置工具</h3>
                     <p>
-                      勾选助手可以使用的实际工具；外部能力在知识库、Skills 和
+                      勾选助手可以使用的实际工具；附件检索在文档检索页设置，Skills 和
                       MCP 页签中连接。
                     </p>
                     <Checkbox.Group
@@ -381,8 +382,8 @@ export function AgentEditor({
             },
             {
               key: "knowledge",
-              label: "知识库",
-              children: connection("knowledge"),
+              label: "文档检索",
+              children: <DocumentRetrieval agent={agent} update={update} />,
             },
             { key: "skill", label: "Skills", children: connection("skill") },
             { key: "mcp", label: "MCP", children: connection("mcp") },

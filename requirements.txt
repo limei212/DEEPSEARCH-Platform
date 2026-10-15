@@ -31,6 +31,7 @@ reportlab>=4.0.0            # 跨平台 PDF 生成，用于 word_converter.py
 # --- 外部工具集成 (Integrations) ---
 httpx>=0.28,<1             # Exa HTTP 搜索接口及资源连接
 ragflow-sdk>=0.1.0          # 知识库 SDK
+fastembed==0.7.3           # 内置 CPU 中文文档向量化，无需 Docker
 requests>=2.31.0            # HTTP 请求库
 
 # --- 基础工具 (Utilities) ---

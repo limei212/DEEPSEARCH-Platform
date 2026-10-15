@@ -91,7 +91,7 @@ export const statusLabels: Record<string, string> = {
   error: "连接异常",
 };
 export const kindLabels: Record<ResourceKind, string> = {
-  knowledge: "知识库",
+  knowledge: "文档检索",
   skill: "Skills",
   mcp: "MCP",
 };

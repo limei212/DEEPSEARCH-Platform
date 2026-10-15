@@ -74,5 +74,5 @@ export interface UploadedItem {
   uid: string;
   name: string;
   size: number;
-  raw: File;
+  raw?: File;
 }

@@ -13,7 +13,7 @@ py -3.12 -m venv .venv
 
 二、复制环境模板
 Copy-Item .env.example .env
-根据需要填写模型、Exa、RAGFlow 和 MySQL 配置。
+根据需要填写模型、Exa、中文文档检索模型和可选 MySQL 配置。
 没有实际模型密钥可以先查看界面；真实研搜和助手测试需要可用模型。
 
 三、启动后端并保持窗口打开
@@ -43,3 +43,7 @@ macOS/Linux 中将 .venv\Scripts\python.exe 换为 .venv/bin/python，将 Copy-I
 备份时保留 .agent-data 和 app/output；完整恢复上传附件还需保留 app/updated。
 此次功能启用前未保存的网页内存记录无法恢复，已有输出文件仍保留在 app/output。
 本项目通过本地 127.0.0.1 运行，上传 GitHub 后不会自动变成公网网站。
+
+文档检索助手已内置：上传 PDF/DOCX/TXT/MD 后提问，不需要 Docker 或知识库服务。
+附件保留在 app/updated，刷新后可见；每轮任务索引只在内存中存在，终态释放。
+.model-cache/fastembed 仅缓存首次下载的模型权重，不保存文档索引；不要提交到 Git。

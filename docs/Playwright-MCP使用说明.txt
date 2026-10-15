@@ -1,0 +1,51 @@
+Playwright MCP 使用说明
+
+当前接入方式
+- 资源中心 → MCP → Playwright MCP 浏览器，状态“可用”，发现 25 个工具。
+- 已绑定现有“网络搜索助手”，未创建其他助手。
+- 网络搜索助手保留 Exa 网络搜索，并允许调用 12 个浏览器工具。
+- 使用本机 Microsoft Edge，无界面运行；每次助手调用使用隔离的浏览器会话。
+- Playwright MCP 版本固定为 0.0.83，Node.js 要求 >=18；本机使用 Node.js 24。
+- 工具本身无需额外 API Key 或 Docker，模型与 Exa 仍使用各自已有配置。
+
+怎么使用
+在聊天输入框直接发送，例如：
+“请使用网络搜索助手，通过 Playwright 打开这个公开网址，阅读页面内容并总结三条要点，注明来源：<网址>。”
+或者：
+“先搜索这三个品牌的官方网站，再用 Playwright 打开页面，对比主推产品与价格，附来源链接。”
+主 Agent 会调度同一个网络搜索助手。提供具体 URL 时，助手可直接使用浏览器；需要查找来源时先使用 Exa，再按需浏览网页。
+
+已绑定的工具
+browser_navigate、browser_navigate_back、browser_snapshot、browser_click、browser_type、browser_press_key、browser_select_option、browser_wait_for、browser_tabs、browser_close、browser_take_screenshot、browser_find。
+在网络搜索助手 → MCP 页可以查看勾选状态与各工具输入参数。
+单个 MCP 工具返回错误时，会作为工具错误消息交给模型，不直接结束整项任务；助手应重试或注明资料缺口。连接建立失败等不可恢复错误仍会明确报错。
+
+在另一台 Windows 电脑重建运行环境
+1. 安装 Node.js 18 或更新版本，并确认 Microsoft Edge 已安装。
+2. 在项目根目录执行：
+npm.cmd install --prefix .local-run/playwright-mcp --save-exact --ignore-scripts --no-audit --no-fund @playwright/mcp@0.0.83
+3. 在资源中心新增 MCP，选择“本地 stdio”。启动命令填写实际 node.exe 路径。
+4. 启动参数每行一个，首行替换为本机项目的实际绝对路径：
+<项目目录>/.local-run/playwright-mcp/node_modules/@playwright/mcp/cli.js
+--browser
+msedge
+--headless
+--isolated
+--no-webmcp
+--image-responses
+omit
+--timeout-navigation
+20000
+--timeout-action
+10000
+--output-dir
+<项目目录>/.local-run/playwright-output
+5. 保存并测试连接；再到网络搜索助手的 MCP 页绑定资源、勾选所需工具，保存并启用。
+
+配置保存在本机 .agent-data/config.sqlite3，刷新和重启后保留。原有启用版本可在助手历史版本中查看。
+Node 依赖安装在 .local-run/playwright-mcp，浏览器自动命名的截图/页面快照在 .local-run/playwright-output；它们不进入 Git 或源码 ZIP。其他电脑需要重新安装依赖并修改本机路径。
+image-responses=omit 避免把截图二进制填入模型文本上下文；页面阅读使用浏览器快照。
+该接入使用独立浏览器会话，不会自动复用你日常 Edge 的登录状态。需要登录的页面应单独配置和授权；公共页面也可能受网络、站点访问限制或加载超时影响。
+
+官方项目：https://github.com/microsoft/playwright-mcp
+许可证：Apache-2.0。

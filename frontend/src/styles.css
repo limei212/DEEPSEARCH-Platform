@@ -781,6 +781,7 @@ textarea {
 
 .task-history-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   gap: 6px;
   min-height: 0;
@@ -803,6 +804,7 @@ textarea {
   align-items: center;
   gap: 9px;
   width: 100%;
+  min-width: 0;
   min-height: 42px;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -814,6 +816,7 @@ textarea {
 }
 
 .task-history-button span:last-child {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -972,16 +975,30 @@ textarea {
   transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
 }
 
-.example-card:hover,
-.example-card:focus-visible {
+.example-card:not(:disabled):hover,
+.example-card:not(:disabled):focus-visible {
   border-color: rgba(15, 118, 110, 0.42);
   background: #f0faf6;
   outline: none;
   transform: translateY(-2px);
 }
 
-.example-card:last-child {
-  grid-column: 1 / -1;
+.example-card:disabled {
+  border-color: #e0e5eb;
+  background: #f2f4f7;
+  cursor: not-allowed;
+}
+
+.example-card:disabled .example-icon {
+  border-color: #dce1e7;
+  background: #e9edf2;
+  color: #94a3b8;
+}
+
+.example-card:disabled .example-copy span,
+.example-card:disabled .example-copy strong,
+.example-card:disabled .example-copy small {
+  color: #94a3b8;
 }
 
 .example-icon {

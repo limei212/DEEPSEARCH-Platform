@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { cancelTask, listSessionFiles, startTask, uploadSessionFiles } from "../lib/api";
+import { cancelTask, listSessionFiles, startTask, uploadSessionFiles, listUploadedFiles } from "../lib/api";
 import { WS_BASE_URL } from "../lib/config";
 import { createThreadId, getStoredThreadId, storeThreadId } from "../lib/thread";
 import { mergeMonitorEvents } from '../lib/savedHistory';
@@ -78,6 +78,17 @@ export function useDeepAgentSession(initialThreadId?: string) {
     }
     setFiles(response.files || []);
   }, [sessionPath]);
+
+  useEffect(()=>{
+    let disposed=false;
+    void listUploadedFiles(threadId).then(response=>{
+      if(disposed)return;
+      setUploadedItems(previous=>Array.from(new Map([
+        ...response.files.map(file=>({...file,uid:'saved-'+file.name})),...previous
+      ].map(file=>[file.name,file])).values()));
+    }).catch(()=>{});
+    return()=>{disposed=true;};
+  },[threadId,restoredTasks]);
 
   useEffect(() => {
     let disposed = false;
@@ -276,7 +287,7 @@ export function useDeepAgentSession(initialThreadId?: string) {
         throw new Error("请选择要上传的文件");
       }
 
-      const nextItems = items.filter((item) => !uploadedNameSetRef.current.has(item.name));
+      const nextItems = items.filter((item) => item.raw);
 
       if (nextItems.length === 0) {
         return {
@@ -289,20 +300,11 @@ export function useDeepAgentSession(initialThreadId?: string) {
       setLastError("");
       try {
         const response = await uploadSessionFiles(
-          nextItems.map((item) => item.raw),
+          nextItems.map((item) => item.raw!),
           threadId
         );
         setUploadedItems((previous) => {
-          const names = new Set(previous.map((item) => item.name));
-          const next = [...previous];
-          nextItems.forEach((item) => {
-            if (!names.has(item.name)) {
-              names.add(item.name);
-              uploadedNameSetRef.current.add(item.name);
-              next.push(item);
-            }
-          });
-          return next;
+          return Array.from(new Map([...previous,...nextItems].map(item=>[item.name,item])).values());
         });
         return response;
       } finally {

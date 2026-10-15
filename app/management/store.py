@@ -38,8 +38,10 @@ class ConfigStore:
                 CREATE TABLE IF NOT EXISTS versions(agent_id TEXT, version INTEGER, config TEXT, created_at TEXT, PRIMARY KEY(agent_id,version));
                 CREATE TABLE IF NOT EXISTS resources(id TEXT PRIMARY KEY, revision INTEGER, body TEXT, secret BLOB);
             ''')
+            db.execute('CREATE TABLE IF NOT EXISTS migrations(name TEXT PRIMARY KEY)')
         if seed:
             self.seed()
+            self.migrate_document_helper()
 
     @contextmanager
     def connect(self):
@@ -56,15 +58,33 @@ class ConfigStore:
         with self.connect() as db:
             if db.execute('SELECT count(*) FROM agents').fetchone()[0]:
                 return
-        resource = self.save_resource(ResourceConfig(id='ragflow-default', kind='knowledge', name='RAGFlow 默认连接', config={
-            'url':os.getenv('RAGFLOW_API_URL', 'http://127.0.0.1:9380'), 'secret_env':'RAGFLOW_API_KEY',
-        }))
-        defaults = [('exa','research',['internet_search']), ('db','database',['list_sql_tables','get_table_data','execute_sql_query']), ('ragflow','knowledge',[])]
+        defaults = [('exa','research',['internet_search']), ('db','database',['list_sql_tables','get_table_data','execute_sql_query']), ('documents','knowledge',['search_task_documents'])]
         for key, icon, tools in defaults:
             data = sub_agents_content[key]
-            config = AgentConfig(id=f'builtin-{key}', name=data['name'], description=data['description'], system_prompt=data['system_prompt'], icon=icon, builtin_tools=tools,
-                knowledge=[{'resource_id':resource['id'],'chat_ids':[]}] if key == 'ragflow' else [])
+            config = AgentConfig(id=f'builtin-{key}', name=data['name'], description=data['description'], system_prompt=data['system_prompt'], icon=icon, builtin_tools=tools)
             self.save_agent(config, publish=True, validate=False)
+
+    def migrate_document_helper(self):
+        from app.agent.prompts import sub_agents_content
+        with self.lock,self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if db.execute("SELECT 1 FROM migrations WHERE name='task-document-rag'").fetchone():return
+            old=db.execute("SELECT * FROM agents WHERE id='builtin-ragflow'").fetchone()
+            if old:
+                body=json.loads(old['draft']);data=sub_agents_content['documents']
+                body.update(name=data['name'],description=data['description'],system_prompt=data['system_prompt'],
+                            builtin_tools=['search_task_documents'],knowledge=[],revision=old['revision']+1)
+                version=(json.loads(old['published'])['version'] if old['published'] else 0)+1
+                active=json.dumps(dict(body,version=version),ensure_ascii=False)
+                db.execute('INSERT INTO versions VALUES (?,?,?,?)',(body['id'],version,active,datetime.now(timezone.utc).isoformat()))
+                db.execute('UPDATE agents SET revision=?,draft=?,published=? WHERE id=?',(body['revision'],json.dumps(body,ensure_ascii=False),active,body['id']))
+            elif not db.execute("SELECT 1 FROM agents WHERE id='builtin-documents'").fetchone():
+                data=sub_agents_content['documents']
+                body=AgentConfig(id='builtin-documents',name=data['name'],description=data['description'],system_prompt=data['system_prompt'],icon='knowledge',builtin_tools=['search_task_documents']).model_dump()
+                body['revision']=1;active=json.dumps(dict(body,version=1),ensure_ascii=False)
+                db.execute('INSERT INTO agents VALUES (?,?,?,?,?)',(body['id'],1,json.dumps(body,ensure_ascii=False),active,1))
+                db.execute('INSERT INTO versions VALUES (?,?,?,?)',(body['id'],1,active,datetime.now(timezone.utc).isoformat()))
+            db.execute("INSERT INTO migrations VALUES ('task-document-rag')")
 
     def save_agent(self, config: AgentConfig, *, publish=False, validate=True):
         body = config.model_dump()

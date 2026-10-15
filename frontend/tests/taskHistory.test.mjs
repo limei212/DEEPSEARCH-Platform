@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createTaskHistory, taskHistoryReducer, taskTitle } from "../src/lib/taskHistory.ts";
 
-test("task names use the first eight characters without splitting an emoji", () => {
+test("task names preserve the full question and normalize whitespace for width-based display", () => {
   const fixtures = [
-    ["  请查询公司白皮书中的品类策略  ", "请查询公司白皮书"],
-    ["整理本季度销售数据并生成报告", "整理本季度销售数"],
-    ["😀请查询公司白皮书", "😀请查询公司白皮"],
+    ["  请查询公司白皮书中的品类策略  ", "请查询公司白皮书中的品类策略"],
+    ["整理本季度销售数据并生成报告", "整理本季度销售数据并生成报告"],
+    ["😀请查询公司白皮书", "😀请查询公司白皮书"],
     ["短任务", "短任务"],
-    ["abcdefghijk", "abcdefgh"]
+    ["abcdefghijk", "abcdefghijk"],
+    ["  分析\n\t文档  风险  ", "分析 文档 风险"]
   ];
   for (const [query, expected] of fixtures) assert.equal(taskTitle(query), expected);
 });
@@ -22,10 +23,19 @@ test("every sent task gets its own entry even when its first eight characters re
     type: "submitted", id: "second", workspaceId: "workspace-a", content: "请查询公司白皮书中的库存策略"
   });
   assert.deepEqual(history.tasks.map(({ id, title }) => ({ id, title })), [
-    { id: "second", title: "请查询公司白皮书" },
-    { id: "first", title: "请查询公司白皮书" }
+    { id: "second", title: "请查询公司白皮书中的库存策略" },
+    { id: "first", title: "请查询公司白皮书中的品类策略" }
   ]);
   assert.equal(history.activeTaskId, "second");
+});
+
+test("restoring old eight-character titles derives complete names from saved questions", () => {
+  const content="请查询公司白皮书中的品类策略";
+  let history=createTaskHistory("draft");
+  history=taskHistoryReducer(history,{type:"restore",tasks:[{id:"old",workspaceId:"chat",content,title:"请查询公司白皮书"}]});
+  assert.equal(history.tasks[0].title,content);
+  history=taskHistoryReducer(history,{type:"restore",tasks:[]});
+  assert.equal(history.tasks[0].title,content);
 });
 
 test("new task opens an empty workspace and keeps previously sent tasks available", () => {

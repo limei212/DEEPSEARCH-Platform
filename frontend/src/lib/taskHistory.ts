@@ -22,7 +22,7 @@ export type TaskHistoryAction =
 export type RestoredHistoryAction = { type: "restore"; tasks: SidebarTask[]; selectedTaskId?: string };
 
 export function taskTitle(query: string): string {
-  return Array.from(query.trim()).slice(0, 8).join("");
+  return query.trim().replace(/\s+/gu, " ");
 }
 
 export function createTaskHistory(workspaceId: string): TaskHistoryState {
@@ -55,7 +55,8 @@ export function taskHistoryReducer(state: TaskHistoryState, action: TaskHistoryA
       return task ? { ...state, workspaceIds: Array.from(new Set([...state.workspaceIds, task.workspaceId])), activeWorkspaceId: task.workspaceId, activeTaskId: task.id } : state;
     }
     case "restore": {
-      const tasks=Array.from(new Map([...action.tasks,...state.tasks].map(task=>[task.id,task])).values());
+      const tasks=Array.from(new Map([...action.tasks,...state.tasks].map(task=>[task.id,task])).values())
+        .map(task=>({...task,title:taskTitle(task.content)}));
       tasks.sort((a,b)=>(b.timestamp||'').localeCompare(a.timestamp||''));
       const selected=tasks.find(task=>task.id===action.selectedTaskId);
       return {...state,tasks,...(selected?{
