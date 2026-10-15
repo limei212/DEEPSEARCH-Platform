@@ -6,7 +6,7 @@ DEEPSEARCH Platform 是一个以对话为入口的多 Agent 研究工作台，�
 
 平台提供可视化的 Agent 配置与资源管理：系统提示词、输入输出约定、Skill 和 MCP 工具均可查看、编辑和测试。执行过程、配置版本、任务历史与附件可以在本机管理，适合个人研究、内部资料分析和多 Agent 工作流的开发验证。
 
-![DEEPSEARCH Platform 对话与历史任务](docs/images/deepsearch-platform-history.jpg)
+![DEEPSEARCH Platform 首页](docs/images/deepsearch-platform-home.png)
 
 ## 目录
 
