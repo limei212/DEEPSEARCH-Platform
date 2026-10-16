@@ -48,10 +48,10 @@ const TASK_EXAMPLES = [
   },
   {
     tool: "数据库查询工具",
-    title: "药品库存排查",
+    title: "日用品库存排查",
     disabled: true,
     prompt:
-      "请使用数据库查询工具，查询库存大于 100 的药品，按库存量升序列出药品名称、批次号、仓库位置和过期日期。",
+      "请使用数据库查询工具，查询库存低于 100 件的日用品，按库存量升序列出商品名称、商品编码、仓库位置和库存数量，并标记需要补货的商品。",
     icon: <DatabaseOutlined aria-hidden />,
   },
   {
@@ -402,13 +402,13 @@ export function ConversationThread({
                 className="example-card"
                 key={example.tool}
                 disabled={example.disabled}
-                title={example.disabled ? "数据库功能暂不可用" : undefined}
+                title={example.disabled ? "数据库功能即将上线" : undefined}
                 onClick={() => onUseExample(example.prompt)}
                 type="button"
               >
                 <span className="example-icon">{example.icon}</span>
                 <span className="example-copy">
-                  <span>{example.tool}{example.disabled ? " · 暂不可用" : ""}</span>
+                  <span>{example.tool}{example.disabled ? " · 即将上线" : ""}</span>
                   <strong>{example.title}</strong>
                   <small>{example.prompt}</small>
                 </span>
